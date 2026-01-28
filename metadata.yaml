@@ -1,5 +1,5 @@
 homepage: "https://zeroclick.ai"
 documentation: "https://zeroclick.ai/documentation-global-tag"
 versions:
-  - sha: INITIAL_COMMIT_SHA
+  - sha: 05db4ded626e2d61d620c615afaee041fad28629
     changeNotes: Initial release
