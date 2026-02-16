@@ -1,5 +1,7 @@
 homepage: "https://zeroclick.ai"
 documentation: "https://zeroclick.ai/documentation-global-tag"
 versions:
+  - sha: 5911f5c5ff0b562d8ef721fb988cb42b4f347e41
+    changeNotes: Allow cookie to work on subdomains
   - sha: 05db4ded626e2d61d620c615afaee041fad28629
     changeNotes: Initial release
