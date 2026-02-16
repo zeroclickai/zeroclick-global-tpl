@@ -33,26 +33,36 @@ ___TEMPLATE_PARAMETERS___
 
 ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 
-// Import APIs
+const getUrl = require('getUrl');
 const getQueryParameters = require('getQueryParameters');
 const setCookie = require('setCookie');
+const getCookieValues = require('getCookieValues');
 const localStorage = require('localStorage');
 const log = require('logToConsole');
 
 const zcId = getQueryParameters('zcId');
 
 if (zcId) {
-  setCookie('_zcId', zcId, {
-    'max-age': 2592000,
-    'path': '/',
-    'secure': true,
-    'sameSite': 'lax'
-  });
-
-  // GTM sandboxed API: localStorage(method, key, value)
   localStorage('setItem', '_zcId', zcId);
 
-  log('ZeroClick Attribution: Stored zcId:', zcId);
+  const hostname = getUrl('host');
+  const parts = hostname.split('.');
+
+  for (var i = parts.length - 2; i >= 0; i--) {
+    var domain = '.' + parts.slice(i).join('.');
+    setCookie('_zcId', zcId, {
+      'domain': domain,
+      'max-age': 2592000,
+      'path': '/',
+      'secure': true,
+      'samesite': 'lax'
+    });
+
+    if (getCookieValues('_zcId').length > 0) {
+      log('Cookie set at domain: ' + domain);
+      break;
+    }
+  }
 }
 
 data.gtmOnSuccess();
@@ -88,7 +98,50 @@ ___WEB_PERMISSIONS___
         "publicId": "access_local_storage",
         "versionId": "1"
       },
-      "param": []
+      "param": [
+        {
+          "key": "keys",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_zcId"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": false
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
     },
     "isRequired": true
   },
@@ -98,7 +151,66 @@ ___WEB_PERMISSIONS___
         "publicId": "set_cookies",
         "versionId": "1"
       },
-      "param": []
+      "param": [
+        {
+          "key": "allowedCookies",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "name"
+                  },
+                  {
+                    "type": 1,
+                    "string": "domain"
+                  },
+                  {
+                    "type": 1,
+                    "string": "path"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "session"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "_zcId"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "*"
+                  },
+                  {
+                    "type": 1,
+                    "string": "secure"
+                  },
+                  {
+                    "type": 1,
+                    "string": "any"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
     },
     "isRequired": true
   },
@@ -141,6 +253,46 @@ ___WEB_PERMISSIONS___
             "type": 8,
             "boolean": true
           }
+        },
+        {
+          "key": "host",
+          "value": {
+            "type": 8,
+            "boolean": true
+          }
+        }
+      ]
+    },
+    "clientAnnotations": {
+      "isEditedByUser": true
+    },
+    "isRequired": true
+  },
+  {
+    "instance": {
+      "key": {
+        "publicId": "get_cookies",
+        "versionId": "1"
+      },
+      "param": [
+        {
+          "key": "cookieAccess",
+          "value": {
+            "type": 1,
+            "string": "specific"
+          }
+        },
+        {
+          "key": "cookieNames",
+          "value": {
+            "type": 2,
+            "listItem": [
+              {
+                "type": 1,
+                "string": "_zcId"
+              }
+            ]
+          }
         }
       ]
     },
@@ -155,42 +307,200 @@ ___WEB_PERMISSIONS___
 ___TESTS___
 
 scenarios:
-- name: Untitled test 1
+- name: Broadest possible cookie subdomain
   code: |-
+    // ===========================
+    // TEST: Confirms broad-to-narrow — stops at broadest valid domain, skips narrower
+    // ===========================
     mock('getQueryParameters', function(param) {
-      if (param === 'zcId') return 'abc-123-def-456';
+      if (param === 'zcId') return 'direction_test';
       return undefined;
     });
 
-    mock('setCookie', function(name, value, options) {
-      assertThat(name).isEqualTo('_zcId');
-      assertThat(value).isEqualTo('abc-123-def-456');
-      assertThat(options['max-age']).isEqualTo(2592000);
-      assertThat(options.path).isEqualTo('/');
-      assertThat(options.secure).isEqualTo(true);
-      assertThat(options.sameSite).isEqualTo('lax');
+    mock('getUrl', function(component) {
+      if (component === 'host') return 'sub.app.example.com';
+      return '';
     });
 
+    var domainsTried = [];
+    mock('setCookie', function(name, value, options) {
+      domainsTried.push(options.domain);
+    });
+
+    mock('getCookieValues', function(name) {
+      // .example.com succeeds on first try
+      // .app.example.com and .sub.app.example.com should NEVER be tried
+      var lastDomain = domainsTried[domainsTried.length - 1];
+      if (lastDomain === '.example.com') return ['direction_test'];
+      return [];
+    });
+
+    mock('localStorage', function() {});
+    mock('logToConsole', function() {});
+
+    runCode(data);
+
+    // Verify it started at broadest possible (TLD+1)
+    assertThat(domainsTried[0]).isEqualTo('.example.com');
+
+    // Verify it STOPPED — never tried narrower domains
+    assertThat(domainsTried.length).isEqualTo(1);
+    assertThat(domainsTried.indexOf('.app.example.com')).isEqualTo(-1);
+    assertThat(domainsTried.indexOf('.sub.app.example.com')).isEqualTo(-1);
+
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Cookie set on first
+  code: |
+    mock('getQueryParameters', function(param) {
+      if (param === 'zcId') return 'abc456';
+      return undefined;
+    });
+
+    mock('getUrl', function(component) {
+      if (component === 'host') return 'example.com';
+      return '';
+    });
+
+    var setCookieCount = 0;
+    mock('setCookie', function(name, value, options) {
+      setCookieCount++;
+    });
+
+    mock('getCookieValues', function(name) {
+      return ['abc456']; // succeeds immediately
+    });
+
+    mock('localStorage', function() {});
+    mock('logToConsole', function() {});
+
+    runCode(data);
+
+    assertThat(setCookieCount).isEqualTo(1); // only one attempt needed
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Handles multi-part TLD
+  code: |
+    mock('getQueryParameters', function(param) {
+      if (param === 'zcId') return 'uk789';
+      return undefined;
+    });
+
+    mock('getUrl', function(component) {
+      if (component === 'host') return 'app.example.co.uk';
+      return '';
+    });
+
+    var domainsTried = [];
+    mock('setCookie', function(name, value, options) {
+      domainsTried.push(options.domain);
+    });
+
+    mock('getCookieValues', function(name) {
+      // .co.uk fails, .example.co.uk succeeds
+      if (domainsTried.length >= 2) return ['uk789'];
+      return [];
+    });
+
+    mock('localStorage', function() {});
+    mock('logToConsole', function() {});
+
+    runCode(data);
+
+    assertThat(domainsTried[0]).isEqualTo('.co.uk');
+    assertThat(domainsTried[1]).isEqualTo('.example.co.uk');
+    assertThat(domainsTried.length).isEqualTo(2); // stopped after success
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Cookie options
+  code: |-
+    mock('getQueryParameters', function(param) {
+      if (param === 'zcId') return 'opts_test';
+      return undefined;
+    });
+
+    mock('getUrl', function(component) {
+      if (component === 'host') return 'example.com';
+      return '';
+    });
+
+    var capturedOptions;
+    mock('setCookie', function(name, value, options) {
+      capturedOptions = options;
+    });
+
+    mock('getCookieValues', function() { return ['opts_test']; });
+    mock('localStorage', function() {});
+    mock('logToConsole', function() {});
+
+    runCode(data);
+
+    assertThat(capturedOptions['max-age']).isEqualTo(2592000);
+    assertThat(capturedOptions.path).isEqualTo('/');
+    assertThat(capturedOptions.secure).isEqualTo(true);
+    assertThat(capturedOptions.samesite).isEqualTo('lax');
+- name: also sets local storage
+  code: |+
+    mock('getQueryParameters', function(param) {
+      if (param === 'zcId') return 'ls_test';
+      return undefined;
+    });
+
+    mock('getUrl', function(component) {
+      if (component === 'host') return 'example.com';
+      return '';
+    });
+
+    mock('setCookie', function() {});
+    mock('getCookieValues', function() { return ['ls_test']; });
+
+    var lsArgs;
     mock('localStorage', function(method, key, value) {
-      assertThat(method).isEqualTo('setItem');
-      assertThat(key).isEqualTo('_zcId');
-      assertThat(value).isEqualTo('abc-123-def-456');
+      lsArgs = { method: method, key: key, value: value };
     });
 
     mock('logToConsole', function() {});
 
-    // Mock the data object with gtmOnSuccess
-    const mockData = {
-      gtmOnSuccess: function() {}
-    };
+    runCode(data);
 
-    runCode(mockData);
+    assertThat(lsArgs.method).isEqualTo('setItem');
+    assertThat(lsArgs.key).isEqualTo('_zcId');
+    assertThat(lsArgs.value).isEqualTo('ls_test');
+    assertApi('gtmOnSuccess').wasCalled();
 
+- name: deep subdomains work
+  code: |-
+    mock('getQueryParameters', function(param) {
+      if (param === 'zcId') return 'deep_test';
+      return undefined;
+    });
+
+    mock('getUrl', function(component) {
+      if (component === 'host') return 'a.b.c.example.com';
+      return '';
+    });
+
+    var deepDomainsTried = [];
+    mock('setCookie', function(name, value, options) {
+      deepDomainsTried.push(options.domain);
+    });
+
+    mock('getCookieValues', function(name) {
+      // .com fails, .example.com succeeds (2nd attempt)
+      if (deepDomainsTried.length >= 2) return ['deep_test'];
+      return [];
+    });
+
+    mock('localStorage', function() {});
+    mock('logToConsole', function() {});
+
+    runCode(data);
+
+    assertThat(deepDomainsTried[0]).isEqualTo('.com');
+    assertThat(deepDomainsTried[1]).isEqualTo('.example.com');
+    assertThat(deepDomainsTried.length).isEqualTo(2); // stopped at broadest valid
     assertApi('gtmOnSuccess').wasCalled();
 
 
 ___NOTES___
 
-Created on 1/27/2026, 5:08:54 PM
+Created on 2/16/2026, 9:44:16 AM
 
 
