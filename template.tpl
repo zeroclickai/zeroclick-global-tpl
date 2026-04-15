@@ -38,15 +38,15 @@ const getQueryParameters = require('getQueryParameters');
 const setCookie = require('setCookie');
 const getCookieValues = require('getCookieValues');
 const localStorage = require('localStorage');
+const queryPermission = require('queryPermission');
 const log = require('logToConsole');
 
 const zcId = getQueryParameters('zcId');
 
 if (zcId) {
-  localStorage('setItem', '_zcId', zcId);
-
   const hostname = getUrl('host');
   const parts = hostname.split('.');
+  var cookieSet = false;
 
   for (var i = parts.length - 2; i >= 0; i--) {
     var domain = '.' + parts.slice(i).join('.');
@@ -59,9 +59,23 @@ if (zcId) {
     });
 
     if (getCookieValues('_zcId').length > 0) {
+      cookieSet = true;
       log('Cookie set at domain: ' + domain);
       break;
     }
+  }
+
+  if (!cookieSet) {
+    log('Unable to set _zcId cookie for host: ' + hostname);
+  }
+
+  if (queryPermission('access_local_storage', 'write', '_zcId')) {
+    var writeSuccess = localStorage.setItem('_zcId', zcId);
+    if (!writeSuccess) {
+      log('localStorage setItem failed for _zcId');
+    }
+  } else {
+    log('Missing localStorage write permission for _zcId');
   }
 }
 
@@ -131,7 +145,7 @@ ___WEB_PERMISSIONS___
                   },
                   {
                     "type": 8,
-                    "boolean": false
+                    "boolean": true
                   }
                 ]
               }
@@ -335,7 +349,10 @@ scenarios:
       return [];
     });
 
-    mock('localStorage', function() {});
+    mock('queryPermission', function() { return true; });
+    mockObject('localStorage', {
+      setItem: function() { return true; }
+    });
     mock('logToConsole', function() {});
 
     runCode(data);
@@ -370,7 +387,10 @@ scenarios:
       return ['abc456']; // succeeds immediately
     });
 
-    mock('localStorage', function() {});
+    mock('queryPermission', function() { return true; });
+    mockObject('localStorage', {
+      setItem: function() { return true; }
+    });
     mock('logToConsole', function() {});
 
     runCode(data);
@@ -400,7 +420,10 @@ scenarios:
       return [];
     });
 
-    mock('localStorage', function() {});
+    mock('queryPermission', function() { return true; });
+    mockObject('localStorage', {
+      setItem: function() { return true; }
+    });
     mock('logToConsole', function() {});
 
     runCode(data);
@@ -427,7 +450,10 @@ scenarios:
     });
 
     mock('getCookieValues', function() { return ['opts_test']; });
-    mock('localStorage', function() {});
+    mock('queryPermission', function() { return true; });
+    mockObject('localStorage', {
+      setItem: function() { return true; }
+    });
     mock('logToConsole', function() {});
 
     runCode(data);
@@ -448,21 +474,69 @@ scenarios:
       return '';
     });
 
-    mock('setCookie', function() {});
+    var callOrder = [];
+    mock('setCookie', function() {
+      callOrder.push('cookie');
+    });
     mock('getCookieValues', function() { return ['ls_test']; });
 
     var lsArgs;
-    mock('localStorage', function(method, key, value) {
-      lsArgs = { method: method, key: key, value: value };
+    mock('queryPermission', function(permission, accessType, key) {
+      return permission === 'access_local_storage' &&
+        accessType === 'write' &&
+        key === '_zcId';
+    });
+    mockObject('localStorage', {
+      setItem: function(key, value) {
+        callOrder.push('localStorage');
+        lsArgs = { key: key, value: value };
+        return true;
+      }
     });
 
     mock('logToConsole', function() {});
 
     runCode(data);
 
-    assertThat(lsArgs.method).isEqualTo('setItem');
     assertThat(lsArgs.key).isEqualTo('_zcId');
     assertThat(lsArgs.value).isEqualTo('ls_test');
+    assertThat(callOrder[callOrder.length - 1]).isEqualTo('localStorage');
+    assertApi('gtmOnSuccess').wasCalled();
+
+- name: local storage write skipped without permission
+  code: |-
+    mock('getQueryParameters', function(param) {
+      if (param === 'zcId') return 'denied_test';
+      return undefined;
+    });
+
+    mock('getUrl', function(component) {
+      if (component === 'host') return 'example.com';
+      return '';
+    });
+
+    mock('setCookie', function() {});
+    mock('getCookieValues', function() { return ['denied_test']; });
+
+    var localStorageWriteCount = 0;
+    mock('queryPermission', function(permission, accessType, key) {
+      if (permission === 'access_local_storage' && accessType === 'write' && key === '_zcId') {
+        return false;
+      }
+      return true;
+    });
+    mockObject('localStorage', {
+      setItem: function() {
+        localStorageWriteCount++;
+        return true;
+      }
+    });
+
+    mock('logToConsole', function() {});
+
+    runCode(data);
+
+    assertThat(localStorageWriteCount).isEqualTo(0);
     assertApi('gtmOnSuccess').wasCalled();
 
 - name: deep subdomains work
@@ -488,7 +562,10 @@ scenarios:
       return [];
     });
 
-    mock('localStorage', function() {});
+    mock('queryPermission', function() { return true; });
+    mockObject('localStorage', {
+      setItem: function() { return true; }
+    });
     mock('logToConsole', function() {});
 
     runCode(data);
