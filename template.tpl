@@ -46,7 +46,7 @@ const zcId = getQueryParameters('zcId');
 if (zcId) {
   const hostname = getUrl('host');
   const parts = hostname.split('.');
-  var cookieSet = false;
+  let cookieSet = false;
 
   for (var i = parts.length - 2; i >= 0; i--) {
     var domain = '.' + parts.slice(i).join('.');
@@ -70,7 +70,7 @@ if (zcId) {
   }
 
   if (queryPermission('access_local_storage', 'write', '_zcId')) {
-    var writeSuccess = localStorage.setItem('_zcId', zcId);
+    const writeSuccess = localStorage.setItem('_zcId', zcId);
     if (!writeSuccess) {
       log('localStorage setItem failed for _zcId');
     }
@@ -557,7 +557,7 @@ scenarios:
     });
 
     mock('getCookieValues', function(name) {
-      // .com fails, .example.com succeeds (2nd attempt)
+      // .example.com fails, .c.example.com succeeds (2nd attempt)
       if (deepDomainsTried.length >= 2) return ['deep_test'];
       return [];
     });
@@ -570,9 +570,9 @@ scenarios:
 
     runCode(data);
 
-    assertThat(deepDomainsTried[0]).isEqualTo('.com');
-    assertThat(deepDomainsTried[1]).isEqualTo('.example.com');
-    assertThat(deepDomainsTried.length).isEqualTo(2); // stopped at broadest valid
+    assertThat(deepDomainsTried[0]).isEqualTo('.example.com');
+    assertThat(deepDomainsTried[1]).isEqualTo('.c.example.com');
+    assertThat(deepDomainsTried.length).isEqualTo(2); // stopped at first success
     assertApi('gtmOnSuccess').wasCalled();
 
 
